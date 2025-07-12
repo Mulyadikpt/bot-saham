@@ -9,19 +9,17 @@ from ta.momentum import RSIIndicator
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
 CHAT_ID = '5998549138'
 
-# === Get IHSG Stock List ===
-url = "https://raw.githubusercontent.com/mrfdn/daftar-saham-ihsg/main/daftar_saham_ihsg.csv"
-try:
-    df_saham = pd.read_csv(url)
-    daftar_saham = df_saham['Kode'].tolist()
-except Exception as e:
-    requests.post(
-        f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-        data={'chat_id': CHAT_ID, 'text': f"❌ Gagal mengambil daftar saham IHSG: {e}"}
-    )
-    exit()
+# === Daftar Saham IHSG (Hardcoded - 100 besar saham aktif, bisa diperbarui manual) ===
+daftar_saham = [
+    'ACES', 'ADRO', 'AKRA', 'ANTM', 'ASII', 'BBCA', 'BBNI', 'BBRI', 'BBTN', 'BMRI',
+    'BRIS', 'BRPT', 'BSDE', 'CPIN', 'ELSA', 'EMTK', 'ERA', 'ERAA', 'EXCL', 'GGRM',
+    'HRUM', 'ICBP', 'INCO', 'INDF', 'INDY', 'INKP', 'INTP', 'ITMG', 'JPFA', 'JSMR',
+    'KLBF', 'MDKA', 'MEDC', 'MIKA', 'MPPA', 'PGAS', 'PTBA', 'PTPP', 'PWON', 'RAJA',
+    'SCMA', 'SIDO', 'SMGR', 'SMRA', 'TBIG', 'TCPI', 'TINS', 'TKIM', 'TLKM', 'TOWR',
+    'TPIA', 'UNTR', 'UNVR', 'WIKA', 'WSKT', 'WTON'
+]
 
-# === Analyze All Stocks ===
+# === Analisis Sinyal ===
 hasil_sinyal = []
 
 for kode in daftar_saham:
@@ -45,16 +43,15 @@ for kode in daftar_saham:
         if last[['MA5', 'MA20', 'RSI', 'MACD', 'Signal']].isnull().any():
             continue
 
-        # === Sinyal BUY ===
+        # Deteksi sinyal teknikal
         macd_cross_buy = prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']
+        macd_cross_sell = prev['MACD'] > prev['Signal'] and last['MACD'] < last['Signal']
+
         buy_signal = (
             (last['RSI'] < 30) or
             macd_cross_buy or
             (last['Close'] > last['MA5'] and last['Close'] > last['MA20'])
         )
-
-        # === Sinyal SELL ===
-        macd_cross_sell = prev['MACD'] > prev['Signal'] and last['MACD'] < last['Signal']
         sell_signal = (
             (last['RSI'] > 70) or
             macd_cross_sell or
@@ -78,5 +75,5 @@ else:
 
 requests.post(
     f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-    data={'chat_id': CHAT_ID, 'text': pesan}
+    data={'chat_id': CHAT_ID, 'text': pesan}
 )
