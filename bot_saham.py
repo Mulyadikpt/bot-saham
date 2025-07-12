@@ -1,16 +1,16 @@
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import requests
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
-import datetime
 
-# === Konfigurasi Telegram ===
+# === Telegram Configuration ===
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
 CHAT_ID = '5998549138'
 
-# === Ambil daftar saham IHSG dari GitHub CSV ===
-url = "https://raw.githubusercontent.com/dhinosaurus/daftar-saham-ihsg/main/ihsg.csv"
+# === Get IHSG Stock List ===
+url = "https://raw.githubusercontent.com/mrfdn/daftar-saham-ihsg/main/daftar_saham_ihsg.csv"
 try:
     df_saham = pd.read_csv(url)
     daftar_saham = df_saham['Kode'].tolist()
@@ -21,62 +21,58 @@ except Exception as e:
     )
     exit()
 
-# === Fungsi untuk cek sinyal saham ===
-def analisa_sinyal(kode):
-    try:
-        data = yf.download(f"{kode}.JK", period="3mo", interval="1d", progress=False)
-        if data.empty or len(data) < 30:
-            return None
+# === Analyze All Stocks ===
+hasil_sinyal = []
 
-        close_series = data['Close'].squeeze()
-        data['MA5'] = SMAIndicator(close_series, window=5).sma_indicator()
-        data['MA20'] = SMAIndicator(close_series, window=20).sma_indicator()
-        data['RSI'] = RSIIndicator(close_series, window=14).rsi()
-        macd = MACD(close_series)
-        data['MACD'] = macd.macd()
-        data['Signal'] = macd.macd_signal()
-
-        last = data.iloc[-1]
-        prev = data.iloc[-2]
-
-        sinyal = 0
-        alasan = []
-
-        if last['RSI'] < 30:
-            sinyal += 1
-            alasan.append("RSI<30")
-        if last['Close'] > last['MA5'] and last['Close'] > last['MA20']:
-            sinyal += 1
-            alasan.append("MA Bullish")
-        if prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']:
-            sinyal += 1
-            alasan.append("MACD Golden Cross")
-
-        if sinyal > 0:
-            return {
-                'kode': kode,
-                'sinyal': sinyal,
-                'alasan': ', '.join(alasan),
-                'harga': round(last['Close'], 2)
-            }
-    except:
-        return None
-
-# === Proses semua saham IHSG ===
-hasil = []
 for kode in daftar_saham:
-    info = analisa_sinyal(kode)
-    if info:
-        hasil.append(info)
+    ticker = kode + ".JK"
+    try:
+        df = yf.download(ticker, period="3mo", interval="1d", progress=False)
+        if df.empty or len(df) < 25:
+            continue
 
-# === Urutkan dan ambil Top 10 ===
-top_saham = sorted(hasil, key=lambda x: x['sinyal'], reverse=True)[:10]
+        close_series = df['Close'].squeeze()
+        df['MA5'] = SMAIndicator(close_series, window=5).sma_indicator()
+        df['MA20'] = SMAIndicator(close_series, window=20).sma_indicator()
+        df['RSI'] = RSIIndicator(close_series, window=14).rsi()
+        macd = MACD(close_series)
+        df['MACD'] = macd.macd()
+        df['Signal'] = macd.macd_signal()
 
-# === Kirim hasil ke Telegram ===
-if top_saham:
-    pesan = "📊 Top 10 Sinyal Saham IHSG Hari Ini:\n\n"
-    for i, saham in enumerate(top_saham, 1):
-        pesan += f"{i}. {saham['kode']} → ✅ {saham['sinyal']} sinyal aktif ({saham['alasan']}) – Close: {saham['harga']}\n"
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        if last[['MA5', 'MA20', 'RSI', 'MACD', 'Signal']].isnull().any():
+            continue
+
+        # === Sinyal BUY ===
+        macd_cross_buy = prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']
+        buy_signal = (
+            (last['RSI'] < 30) or
+            macd_cross_buy or
+            (last['Close'] > last['MA5'] and last['Close'] > last['MA20'])
+        )
+
+        # === Sinyal SELL ===
+        macd_cross_sell = prev['MACD'] > prev['Signal'] and last['MACD'] < last['Signal']
+        sell_signal = (
+            (last['RSI'] > 70) or
+            macd_cross_sell or
+            (last['Close'] < last['MA5'] and last['Close'] < last['MA20'])
+        )
+
+        if buy_signal and not sell_signal:
+            hasil_sinyal.append(f"✅ BUY — {kode}")
+        elif sell_signal and not buy_signal:
+            hasil_sinyal.append(f"🚨 SELL — {kode}")
+
+    except Exception as e:
+        print(f"[ERROR] {kode}: {e}")
+        continue
+
+# === Kirim ke Telegram ===
+if hasil_sinyal:
+    pesan = "📈 Sinyal Kuat Saham IHSG Hari Ini:\n\n" + "\n".join(hasil_sinyal)
 else:
     pesan = "🔍 Tidak ada sinyal kuat di Saham IHSG hari ini."
 
