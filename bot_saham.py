@@ -1,4 +1,6 @@
-# bot_saham.py
+# ===========================================
+# ✅ BOT SAHAM IHSG - FINAL GABUNG SEMUA FITUR
+# ===========================================
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -6,82 +8,97 @@ import requests
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
 
-# ===== KONFIGURASI TELEGRAM =====
+# ========== KONFIG TELEGRAM ==========
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
 CHAT_ID = '5998549138'
 
-# ===== LIST SAHAM IHSG (Statis agar tidak error) =====
+# ========== FUNGSI MENGAMBIL DAFTAR SAHAM IHSG ==========
 def ambil_saham_ihsg():
-    return [
-        'ACES','ADHI','ADRO','AGII','AKRA','ANTM','ASII','AUTO','BBCA','BBNI','BBRI','BBTN','BFIN','BMRI','BNGA','BRIS',
-        'BSDE','BTPS','CPIN','DMAS','DOID','ELSA','EMTK','ERAA','EXCL','GGRM','HRUM','ICBP','INCO','INDF','INDY','INKP',
-        'INTP','ITMG','JPFA','JSMR','KLBF','LPKR','LSIP','MAPI','MDKA','MEDC','MIKA','MNCN','PGAS','PTBA','PTPP','PWON',
-        'RAJA','SIDO','SMGR','SMRA','TINS','TKIM','TLKM','TOWR','UNTR','UNVR','WIKA','WSKT','WTON'
-    ]
-
-# ===== AMBIL SINYAL SAHAM =====
-def analisa_saham(kode):
+    url = "https://raw.githubusercontent.com/dhinosaurus/daftar-saham-ihsg/main/ihsg.csv"
     try:
-        df = yf.download(kode + ".JK", period='3mo', interval='1d')
-        if df.empty or len(df) < 20:
-            return None
+        df = pd.read_csv(url)
+        return df['Kode'].dropna().astype(str).tolist()
+    except:
+        return []
 
-        df['Close'] = df['Close'].ffill()
-        close = df['Close']
-        df['MA5'] = SMAIndicator(close, window=5).sma_indicator()
-        df['MA20'] = SMAIndicator(close, window=20).sma_indicator()
-        df['RSI'] = RSIIndicator(close, window=14).rsi()
-        macd = MACD(close)
+# ========== PROSES UTAMA ==========
+result_sinyal = []
+result_hampir = []
+result_pantau = []
+ringkasan_10 = []
+saham_list = ambil_saham_ihsg()
+
+for kode in saham_list:
+    ticker = kode + ".JK"
+    try:
+        df = yf.download(ticker, period='3mo', interval='1d', progress=False)
+        if df.empty or len(df) < 20:
+            continue
+
+        close_series = df['Close'].squeeze()
+        df['MA5'] = SMAIndicator(close_series, window=5).sma_indicator()
+        df['MA20'] = SMAIndicator(close_series, window=20).sma_indicator()
+        df['RSI'] = RSIIndicator(close_series, window=14).rsi()
+        macd = MACD(close_series)
         df['MACD'] = macd.macd()
         df['Signal'] = macd.macd_signal()
 
         last = df.iloc[-1]
         prev = df.iloc[-2]
 
-        if last[['MA5','MA20','RSI','MACD','Signal']].isnull().any():
-            return None
+        if last[['MA5', 'MA20', 'RSI', 'MACD', 'Signal']].isnull().any():
+            continue
 
-        # ==== Sinyal Buy ==== #
-        macd_cross_up = prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']
-        price_above_ma = last['Close'] > last['MA5'] and last['Close'] > last['MA20']
-        rsi_ok = last['RSI'] < 30
+        macd_cross_buy = prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']
+        macd_cross_sell = prev['MACD'] > prev['Signal'] and last['MACD'] < last['Signal']
 
-        if macd_cross_up or price_above_ma or rsi_ok:
-            remark = f"✅ BUY untuk {kode}"
-        else:
-            return None
+        buy = (
+            last['RSI'] < 30 or
+            macd_cross_buy or
+            (last['Close'] > last['MA5'] > last['MA20'])
+        )
+        sell = (
+            last['RSI'] > 70 or
+            macd_cross_sell or
+            (last['Close'] < last['MA5'] < last['MA20'])
+        )
 
-        # ==== Format Pesan ==== #
-        pesan = f"""📊 Sinyal Otomatis {kode}
+        if buy and not sell:
+            result_sinyal.append(f"{kode} → ✅ BUY")
+        elif sell and not buy:
+            result_sinyal.append(f"{kode} → 🚨 SELL")
+        elif (last['Close'] > last['MA5']) and (last['RSI'] < 50):
+            result_hampir.append(f"{kode} → 🔍 Hampir sinyal BUY")
+        elif last['RSI'] < 60 and macd_cross_buy:
+            result_pantau.append(f"{kode} → 👀 MACD & RSI menarik")
 
-Close: {last['Close']:.2f}
-MA5: {last['MA5']:.2f} | MA20: {last['MA20']:.2f}
-RSI: {last['RSI']:.2f}
-MACD: {last['MACD']:.2f} | Signal: {last['Signal']:.2f}
+        # Tambahkan ringkasan 10 saham pertama
+        if len(ringkasan_10) < 10:
+            ringkasan_10.append(
+                f"{kode}: Close={last['Close']:.0f}, MA5={last['MA5']:.0f}, RSI={last['RSI']:.1f}, MACD={last['MACD']:.2f}"
+            )
 
-Sinyal:
-{remark}
-"""
-        return pesan
-    except Exception as e:
-        return None
+    except:
+        continue
 
-# ===== PROSES UTAMA =====
-saham_list = ambil_saham_ihsg()
-hasil = []
-
-for kode in saham_list:
-    sinyal = analisa_saham(kode)
-    if sinyal:
-        hasil.append(sinyal)
-
-# ===== KIRIM KE TELEGRAM =====
-if hasil:
-    pesan_final = "\n===============================\n".join(hasil)
+# ========== FORMAT PESAN TELEGRAM ==========
+message = ""
+if result_sinyal:
+    message += "\n\n📈 Sinyal Kuat Saham IHSG Hari Ini:\n" + "\n".join(result_sinyal[:10])
 else:
-    pesan_final = "🔍 Tidak ada sinyal kuat di Saham IHSG hari ini."
+    message += "🔍 Tidak ada sinyal kuat di Saham IHSG hari ini."
 
+if result_hampir:
+    message += "\n\n📊 Hampir Sinyal BUY:\n" + "\n".join(result_hampir[:3])
+
+if result_pantau:
+    message += "\n\n👀 Saham Potensi Menarik:\n" + "\n".join(result_pantau[:5])
+
+if ringkasan_10:
+    message += "\n\n📋 Ringkasan 10 Saham:\n" + "\n".join(ringkasan_10)
+
+# ========== KIRIM TELEGRAM ==========
 requests.post(
-    f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-    data={'chat_id': CHAT_ID, 'text': pesan_final[:4000]}  # Telegram limit
+    f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+    data={"chat_id": CHAT_ID, "text": message}
 )
