@@ -1,26 +1,28 @@
-name: Auto Run Bot Saham
+name: Auto Run Bot Saham IHSG
 
 on:
   schedule:
-    - cron: '30 2 * * *'  # 09:30 WIB (UTC+7)
-    - cron: '0 7 * * *'   # 14:00 WIB (UTC+7)
-  workflow_dispatch:
+    - cron: '30 2 * * *'   # 09:30 WIB (UTC+7 = 02:30 UTC)
+    - cron: '0 7 * * *'    # 14:00 WIB (UTC+7 = 07:00 UTC)
+  workflow_dispatch:       # Bisa dijalankan manual dari GitHub UI
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
 
-      - name: Install dependencies
-        run: |
-          pip install yfinance ta requests pandas
+    - name: Install dependencies
+      run: |
+        pip install yfinance ta pandas requests
 
-      - name: Run bot script
-        run: python bot_saham.py
+    - name: Jalankan Bot Saham
+      run: |
+        python bot_saham.py
