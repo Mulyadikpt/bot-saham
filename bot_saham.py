@@ -6,7 +6,7 @@ from ta.momentum import RSIIndicator
 
 # === Konfigurasi Telegram ===
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
-CHAT_ID = '5998549138'
+CHAT_ID = '5998549138'  # Ganti jika pakai grup, pastikan bot jadi admin & pakai ID grup
 
 # === Ambil Data Saham ===
 ticker = 'RAJA.JK'
@@ -14,10 +14,12 @@ df = yf.download(ticker, period='3mo', interval='1d')
 
 # Pastikan data tidak kosong
 if df.empty:
-    requests.post(
-        f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-        data={'chat_id': CHAT_ID, 'text': f"⚠️ Data saham {ticker} tidak tersedia."}
-    )
+    msg = f"⚠️ Data saham {ticker} tidak tersedia."
+    print(msg)
+    res = requests.post(f'https://api.telegram.org/bot{TOKEN}/sendMessage',
+                        data={'chat_id': CHAT_ID, 'text': msg})
+    print(">> Status:", res.status_code)
+    print(">> Response:", res.text)
     exit()
 
 # Hitung indikator teknikal
@@ -73,8 +75,11 @@ Sinyal:
 {remark}
 """
 
-# Kirim ke Telegram
-requests.post(
+# Kirim ke Telegram + Debug Log
+print(">> Mengirim pesan ke Telegram...")
+res = requests.post(
     f'https://api.telegram.org/bot{TOKEN}/sendMessage',
     data={'chat_id': CHAT_ID, 'text': message}
 )
+print(">> Status:", res.status_code)
+print(">> Response:", res.text)
