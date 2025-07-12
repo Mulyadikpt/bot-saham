@@ -6,7 +6,7 @@ from ta.momentum import RSIIndicator
 
 # === Konfigurasi Telegram ===
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
-CHAT_ID = '5998549138'  # Ganti jika pakai grup, pastikan bot jadi admin & pakai ID grup
+CHAT_ID = '5998549138'
 
 # === Ambil Data Saham ===
 ticker = 'RAJA.JK'
@@ -14,12 +14,10 @@ df = yf.download(ticker, period='3mo', interval='1d')
 
 # Pastikan data tidak kosong
 if df.empty:
-    msg = f"⚠️ Data saham {ticker} tidak tersedia."
-    print(msg)
-    res = requests.post(f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-                        data={'chat_id': CHAT_ID, 'text': msg})
-    print(">> Status:", res.status_code)
-    print(">> Response:", res.text)
+    requests.post(
+        f'https://api.telegram.org/bot{TOKEN}/sendMessage',
+        data={'chat_id': CHAT_ID, 'text': f"⚠️ Data saham {ticker} tidak tersedia."}
+    )
     exit()
 
 # Hitung indikator teknikal
@@ -43,15 +41,15 @@ else:
     macd_cross_sell = df['MACD'].iloc[-2] > df['Signal'].iloc[-2] and df['MACD'].iloc[-1] < df['Signal'].iloc[-1]
 
     buy_signal = (
-        (last_row['RSI'] < 30) or
+        (last_row['RSI'].item() < 30) or
         macd_cross_buy or
-        (last_row['Close'] > last_row['MA5'] and last_row['Close'] > last_row['MA20'])
+        (last_row['Close'].item() > last_row['MA5'].item() and last_row['Close'].item() > last_row['MA20'].item())
     )
 
     sell_signal = (
-        (last_row['RSI'] > 70) or
+        (last_row['RSI'].item() > 70) or
         macd_cross_sell or
-        (last_row['Close'] < last_row['MA5'] and last_row['Close'] < last_row['MA20'])
+        (last_row['Close'].item() < last_row['MA5'].item() and last_row['Close'].item() < last_row['MA20'].item())
     )
 
     if buy_signal and not sell_signal:
@@ -66,20 +64,17 @@ else:
 # Format pesan
 message = f"""📊 Sinyal Otomatis RAJA
 
-Close: {last_row['Close']:.2f}
-MA5: {last_row['MA5']:.2f} | MA20: {last_row['MA20']:.2f}
-RSI: {last_row['RSI']:.2f}
-MACD: {last_row['MACD']:.2f} | Signal Line: {last_row['Signal']:.2f}
+Close: {last_row['Close'].item():.2f}
+MA5: {last_row['MA5'].item():.2f} | MA20: {last_row['MA20'].item():.2f}
+RSI: {last_row['RSI'].item():.2f}
+MACD: {last_row['MACD'].item():.2f} | Signal Line: {last_row['Signal'].item():.2f}
 
 Sinyal:
 {remark}
 """
 
-# Kirim ke Telegram + Debug Log
-print(">> Mengirim pesan ke Telegram...")
-res = requests.post(
+# Kirim ke Telegram
+requests.post(
     f'https://api.telegram.org/bot{TOKEN}/sendMessage',
     data={'chat_id': CHAT_ID, 'text': message}
 )
-print(">> Status:", res.status_code)
-print(">> Response:", res.text)
