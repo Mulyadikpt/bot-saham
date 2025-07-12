@@ -5,8 +5,17 @@ from ta.momentum import RSIIndicator
 import requests
 
 # TOKEN & CHAT_ID Telegram (ganti dengan milikmu)
+import requests
+
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
 CHAT_ID = '5998549138'
+text = '✅ Test notifikasi dari Python!'
+
+requests.post(
+    f'https://api.telegram.org/bot{TOKEN}/sendMessage',
+    data={'chat_id': CHAT_ID, 'text': text}
+)
+
 
 # Daftar saham (LQ45 + contoh IHSG)
 saham_list = ['BBRI.JK', 'TLKM.JK', 'ANTM.JK', 'RAJA.JK']
