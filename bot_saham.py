@@ -8,66 +8,78 @@ from ta.momentum import RSIIndicator
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
 CHAT_ID = '5998549138'
 
-# === Ambil daftar saham IHSG dari Wikipedia ===
-daftar_saham = pd.read_html("https://id.wikipedia.org/wiki/Daftar_saham_IHSG")[0]
-kode_saham = daftar_saham['Kode'].dropna().tolist()
-kode_saham = [kode.strip().upper() + ".JK" for kode in kode_saham if isinstance(kode, str)]
+# === Daftar Saham IHSG Manual (Bisa ditambah) ===
+tickers = [
+    'BBCA.JK', 'BBRI.JK', 'BMRI.JK', 'TLKM.JK', 'ASII.JK', 'UNVR.JK', 'RAJA.JK',
+    'ANTM.JK', 'ADRO.JK', 'ICBP.JK', 'INDF.JK', 'PGAS.JK', 'MDKA.JK', 'PTBA.JK'
+]
 
-hasil_sinyal = []
+# === Fungsi Kirim Telegram ===
+def send_telegram(message):
+    url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
+    data = {'chat_id': CHAT_ID, 'text': message}
+    try:
+        requests.post(url, data=data)
+    except Exception as e:
+        print(f"Telegram error: {e}")
 
-for kode in kode_saham:
+# === Mulai Analisis ===
+hasil = []
+for kode in tickers:
     try:
         df = yf.download(kode, period='3mo', interval='1d', progress=False)
-        if df.empty or len(df) < 21:
+        if df.empty or len(df) < 20:
             continue
 
-        close_series = df['Close']
-        if len(close_series.shape) > 1:
-            close_series = close_series.squeeze()
-
-        df['MA5'] = SMAIndicator(close_series, window=5).sma_indicator()
-        df['MA20'] = SMAIndicator(close_series, window=20).sma_indicator()
-        df['RSI'] = RSIIndicator(close_series, window=14).rsi()
-        macd = MACD(close_series)
+        close = df['Close'].squeeze()
+        df['MA5'] = SMAIndicator(close, window=5).sma_indicator()
+        df['MA20'] = SMAIndicator(close, window=20).sma_indicator()
+        df['RSI'] = RSIIndicator(close, window=14).rsi()
+        macd = MACD(close)
         df['MACD'] = macd.macd()
         df['Signal'] = macd.macd_signal()
 
         last = df.iloc[-1]
+        prev = df.iloc[-2]
 
+        # Validasi data
         if last[['MA5', 'MA20', 'RSI', 'MACD', 'Signal']].isnull().any():
             continue
 
-        # Cek sinyal
-        macd_cross_buy = df['MACD'].iloc[-2] < df['Signal'].iloc[-2] and df['MACD'].iloc[-1] > df['Signal'].iloc[-1]
-        macd_cross_sell = df['MACD'].iloc[-2] > df['Signal'].iloc[-2] and df['MACD'].iloc[-1] < df['Signal'].iloc[-1]
+        # Deteksi sinyal
+        macd_cross_up = prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']
+        macd_cross_down = prev['MACD'] > prev['Signal'] and last['MACD'] < last['Signal']
 
-        buy = (
+        is_buy = (
             (last['RSI'] < 30) or
-            macd_cross_buy or
+            macd_cross_up or
             (last['Close'] > last['MA5'] and last['Close'] > last['MA20'])
         )
-
-        sell = (
+        is_sell = (
             (last['RSI'] > 70) or
-            macd_cross_sell or
+            macd_cross_down or
             (last['Close'] < last['MA5'] and last['Close'] < last['MA20'])
         )
 
-        if buy and not sell:
-            hasil_sinyal.append(f"{kode.replace('.JK','')} → ✅ BUY")
-        elif sell and not buy:
-            hasil_sinyal.append(f"{kode.replace('.JK','')} → 🚨 SELL")
+        if is_buy and not is_sell:
+            remark = f"{kode.replace('.JK','')} → ✅ BUY"
+        elif is_sell and not is_buy:
+            remark = f"{kode.replace('.JK','')} → 🚨 SELL"
+        elif is_buy and is_sell:
+            remark = f"{kode.replace('.JK','')} → ⚠️ Mixed Signal"
+        else:
+            continue  # tidak ada sinyal kuat
+
+        hasil.append(remark)
 
     except Exception as e:
-        continue  # skip saham error
+        print(f"{kode} error: {e}")
+        continue
 
-# === Kirim hasil ke Telegram ===
-if hasil_sinyal:
-    pesan = "📊 Sinyal Kuat Saham IHSG Hari Ini:\n\n" + "\n".join(hasil_sinyal)
+# === Kirim ke Telegram ===
+if hasil:
+    pesan = "📊 Sinyal Kuat Saham IHSG Hari Ini:\n\n" + "\n".join(hasil)
 else:
-    pesan = "🔍 Tidak ada sinyal kuat di saham IHSG hari ini."
+    pesan = "🔍 Tidak ada sinyal kuat di Saham IHSG hari ini."
 
-requests.post(
-    f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-    data={'chat_id': CHAT_ID, 'text': pesan}
-)
+send_telegram(pesan)
