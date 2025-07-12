@@ -1,0 +1,27 @@
+name: Auto Run Bot Saham
+
+on:
+  schedule:
+    - cron: '30 2 * * *'   # 09:30 WIB (WIB = UTC+7, jadi 2:30 UTC)
+    - cron: '7 7 * * *'    # 14:07 WIB (WIB = UTC+7, jadi 7:07 UTC)
+  workflow_dispatch:       # bisa dijalankan manual
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install yfinance ta requests
+
+      - name: Run bot_saham.py
+        run: python bot_saham.py
