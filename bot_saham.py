@@ -1,74 +1,59 @@
 import yfinance as yf
 import pandas as pd
 import requests
-from ta.trend import MACD, EMAIndicator
+from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
-from ta.volatility import BollingerBands
 
-# === Konfigurasi Telegram ===
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
 CHAT_ID = '5998549138'
 
-# === Ambil daftar saham IHSG ===
-url = "https://raw.githubusercontent.com/dhinosaurus/daftar-saham-ihsg/main/ihsg.csv"
-
 try:
-    df_saham = pd.read_csv(url)
-    symbols = df_saham['Kode'].tolist()
+    url = "https://raw.githubusercontent.com/dhinosaurus/daftar-saham-ihsg/main/ihsg.csv"
+    df_ihsg = pd.read_csv(url)
+    daftar_saham = df_ihsg['Kode'].tolist()
 except Exception as e:
-    requests.post(f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-                  data={'chat_id': CHAT_ID, 'text': f"❌ Gagal mengambil daftar saham IHSG: {e}"})
+    requests.post(
+        f'https://api.telegram.org/bot{TOKEN}/sendMessage',
+        data={'chat_id': CHAT_ID, 'text': f"❌ Gagal mengambil daftar saham IHSG:\n{e}"}
+    )
     exit()
 
 hasil_sinyal = []
 
-for kode in symbols:
-    ticker = kode + ".JK"
+for kode in daftar_saham:
+    ticker = f"{kode}.JK"
     try:
-        data = yf.download(ticker, period="3mo", interval="1d")
-        if data.empty:
+        df = yf.download(ticker, period='3mo', interval='1d', progress=False)
+        if df.empty or len(df) < 25:
             continue
 
-        close = data['Close'].squeeze()
-
-        # Indikator
-        data['EMA5'] = EMAIndicator(close, window=5).ema_indicator()
-        data['EMA20'] = EMAIndicator(close, window=20).ema_indicator()
-        data['RSI'] = RSIIndicator(close, window=14).rsi()
+        close = df['Close'].squeeze()
+        df['MA5'] = SMAIndicator(close, window=5).sma_indicator()
+        df['MA20'] = SMAIndicator(close, window=20).sma_indicator()
+        df['RSI'] = RSIIndicator(close, window=14).rsi()
         macd = MACD(close)
-        data['MACD'] = macd.macd()
-        data['MACD_signal'] = macd.macd_signal()
-        bb = BollingerBands(close)
-        data['BB_upper'] = bb.bollinger_hband()
-        data['BB_lower'] = bb.bollinger_lband()
+        df['MACD'] = macd.macd()
+        df['Signal'] = macd.macd_signal()
 
-        last = data.iloc[-1]
-        prev = data.iloc[-2]
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
 
-        # Sinyal-sinyal
-        ema_cross = last['EMA5'] > last['EMA20'] and prev['EMA5'] < prev['EMA20']
-        rsi_oversold = last['RSI'] < 30
-        macd_cross = prev['MACD'] < prev['MACD_signal'] and last['MACD'] > last['MACD_signal']
-        breakout_bb = last['Close'] > last['BB_upper']
+        macd_cross_up = prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']
+        rsi_low = last['RSI'] < 30
+        price_above_ma = last['Close'] > last['MA5'] and last['Close'] > last['MA20']
 
-        sinyal = []
-        if ema_cross: sinyal.append("📈 EMA Cross")
-        if rsi_oversold: sinyal.append("🟢 RSI < 30")
-        if macd_cross: sinyal.append("⚡ MACD Bullish")
-        if breakout_bb: sinyal.append("💥 Breakout BB")
-
-        if len(sinyal) >= 2:
-            pesan = f"{kode} → ✅ Sinyal kuat:\n" + "\n".join(sinyal)
-            hasil_sinyal.append(pesan)
+        if macd_cross_up or rsi_low or price_above_ma:
+            hasil_sinyal.append(f"{kode} → ✅ BUY")
 
     except Exception:
         continue
 
-# Kirim hasil
 if hasil_sinyal:
-    final = "📊 Sinyal Kuat Saham IHSG Hari Ini:\n\n" + "\n\n".join(hasil_sinyal)
+    pesan = "📊 Sinyal BUY Kuat Saham IHSG Hari Ini:\n\n" + "\n".join(hasil_sinyal)
 else:
-    final = "🔍 Tidak ada sinyal kuat di Saham IHSG hari ini."
+    pesan = "🔍 Tidak ada sinyal kuat di Saham IHSG hari ini."
 
-requests.post(f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-              data={'chat_id': CHAT_ID, 'text': final})
+requests.post(
+    f'https://api.telegram.org/bot{TOKEN}/sendMessage',
+    data={'chat_id': CHAT_ID, 'text': pesan}
+)
