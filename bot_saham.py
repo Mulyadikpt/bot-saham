@@ -8,73 +8,61 @@ from ta.momentum import RSIIndicator
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
 CHAT_ID = '5998549138'
 
-# === Ambil Data Saham ===
-ticker = 'RAJA.JK'
-df = yf.download(ticker, period='3mo', interval='1d')
+# === Ambil daftar saham IHSG (kode .JK) ===
+daftar_saham = pd.read_html("https://id.wikipedia.org/wiki/Daftar_saham_IHSG")[0]
+kode_saham = daftar_saham['Kode'].dropna().tolist()
+kode_saham = [kode.strip().upper() + ".JK" for kode in kode_saham if isinstance(kode, str)]
 
-# Pastikan data tidak kosong
-if df.empty:
-    requests.post(
-        f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-        data={'chat_id': CHAT_ID, 'text': f"⚠️ Data saham {ticker} tidak tersedia."}
-    )
-    exit()
+hasil_sinyal = []
 
-# Hitung indikator teknikal
-close_series = df['Close'].squeeze()
-df['MA5'] = SMAIndicator(close_series, window=5).sma_indicator()
-df['MA20'] = SMAIndicator(close_series, window=20).sma_indicator()
-df['RSI'] = RSIIndicator(close_series, window=14).rsi()
-macd = MACD(close_series)
-df['MACD'] = macd.macd()
-df['Signal'] = macd.macd_signal()
+for kode in kode_saham:
+    try:
+        df = yf.download(kode, period='3mo', interval='1d', progress=False)
+        if df.empty or len(df) < 20:
+            continue
 
-# Ambil data terakhir
-last_row = df.iloc[-1]
+        close_series = df['Close'].squeeze()
+        df['MA5'] = SMAIndicator(close_series, window=5).sma_indicator()
+        df['MA20'] = SMAIndicator(close_series, window=20).sma_indicator()
+        df['RSI'] = RSIIndicator(close_series, window=14).rsi()
+        macd = MACD(close_series)
+        df['MACD'] = macd.macd()
+        df['Signal'] = macd.macd_signal()
 
-# Cek validitas data
-if last_row[['MA5', 'MA20', 'RSI', 'MACD', 'Signal']].isnull().any():
-    remark = "🔍 Tidak ada sinyal kuat (Netral) – Data belum cukup."
+        last = df.iloc[-1]
+        if last[['MA5', 'MA20', 'RSI', 'MACD', 'Signal']].isnull().any():
+            continue
+
+        macd_cross_buy = df['MACD'].iloc[-2] < df['Signal'].iloc[-2] and df['MACD'].iloc[-1] > df['Signal'].iloc[-1]
+        macd_cross_sell = df['MACD'].iloc[-2] > df['Signal'].iloc[-2] and df['MACD'].iloc[-1] < df['Signal'].iloc[-1]
+
+        buy = (
+            (last['RSI'] < 30) or
+            macd_cross_buy or
+            (last['Close'] > last['MA5'] and last['Close'] > last['MA20'])
+        )
+
+        sell = (
+            (last['RSI'] > 70) or
+            macd_cross_sell or
+            (last['Close'] < last['MA5'] and last['Close'] < last['MA20'])
+        )
+
+        if buy and not sell:
+            hasil_sinyal.append(f"{kode.replace('.JK','')} → ✅ BUY")
+        elif sell and not buy:
+            hasil_sinyal.append(f"{kode.replace('.JK','')} → 🚨 SELL")
+
+    except Exception as e:
+        continue  # skip error saham
+
+# === Kirim hasil ke Telegram ===
+if hasil_sinyal:
+    pesan = "📊 Sinyal Kuat Saham IHSG Hari Ini:\n\n" + "\n".join(hasil_sinyal)
 else:
-    # Cek sinyal
-    macd_cross_buy = df['MACD'].iloc[-2] < df['Signal'].iloc[-2] and df['MACD'].iloc[-1] > df['Signal'].iloc[-1]
-    macd_cross_sell = df['MACD'].iloc[-2] > df['Signal'].iloc[-2] and df['MACD'].iloc[-1] < df['Signal'].iloc[-1]
+    pesan = "🔍 Tidak ada sinyal kuat di saham IHSG hari ini."
 
-    buy_signal = (
-        (last_row['RSI'].item() < 30) or
-        macd_cross_buy or
-        (last_row['Close'].item() > last_row['MA5'].item() and last_row['Close'].item() > last_row['MA20'].item())
-    )
-
-    sell_signal = (
-        (last_row['RSI'].item() > 70) or
-        macd_cross_sell or
-        (last_row['Close'].item() < last_row['MA5'].item() and last_row['Close'].item() < last_row['MA20'].item())
-    )
-
-    if buy_signal and not sell_signal:
-        remark = "✅ Sinyal BUY terdeteksi untuk RAJA hari ini."
-    elif sell_signal and not buy_signal:
-        remark = "🚨 Sinyal SELL terdeteksi untuk RAJA hari ini."
-    elif buy_signal and sell_signal:
-        remark = "⚠️ Sinyal campuran (Buy & Sell bersamaan)"
-    else:
-        remark = "🔍 Tidak ada sinyal kuat (Netral)"
-
-# Format pesan
-message = f"""📊 Sinyal Otomatis RAJA
-
-Close: {last_row['Close'].item():.2f}
-MA5: {last_row['MA5'].item():.2f} | MA20: {last_row['MA20'].item():.2f}
-RSI: {last_row['RSI'].item():.2f}
-MACD: {last_row['MACD'].item():.2f} | Signal Line: {last_row['Signal'].item():.2f}
-
-Sinyal:
-{remark}
-"""
-
-# Kirim ke Telegram
 requests.post(
     f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-    data={'chat_id': CHAT_ID, 'text': message}
+    data={'chat_id': CHAT_ID, 'text': pesan}
 )
