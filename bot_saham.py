@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
 import requests
+import datetime as dt
 from ta.trend import SMAIndicator, MACD
 from ta.momentum import RSIIndicator
 
@@ -8,7 +9,12 @@ from ta.momentum import RSIIndicator
 TOKEN = '8151140696:AAGQ2DsmV_xlHrUtp2wPYj-YU8yd60pQdEo'
 CHAT_ID = '5998549138'
 
-# === Ambil daftar saham IHSG ===
+# === Waktu saat ini (UTC+7) ===
+now = dt.datetime.now(dt.timezone(dt.timedelta(hours=7)))
+jam = now.hour
+mode = 'After Close' if jam >= 17 else 'Live'
+
+# === Ambil daftar saham IHSG dari GitHub ===
 def ambil_saham_ihsg():
     url = 'https://raw.githubusercontent.com/davidcesarino/idx-listed-companies/main/idx-listed.csv'
     df = pd.read_csv(url)
@@ -17,48 +23,41 @@ def ambil_saham_ihsg():
 saham_list = ambil_saham_ihsg()
 hasil_sinyal = []
 
-# === Loop semua saham IHSG ===
+# === Proses tiap saham ===
 for kode in saham_list:
     ticker = kode + '.JK'
-    try:
-        df = yf.download(ticker, period='3mo', interval='1d', progress=False)
+    df = yf.download(ticker, period='3mo', interval='1d', progress=False)
 
-        if df.empty or len(df) < 30:
-            continue
-
-        df['MA5'] = SMAIndicator(df['Close'], window=5).sma_indicator()
-        df['MA20'] = SMAIndicator(df['Close'], window=20).sma_indicator()
-        df['RSI'] = RSIIndicator(df['Close']).rsi()
-        macd = MACD(df['Close'])
-        df['MACD'] = macd.macd()
-        df['Signal'] = macd.macd_signal()
-
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        if pd.isnull(last[['MA5', 'MA20', 'RSI', 'MACD', 'Signal']]).any():
-            continue
-
-        # === Logika sinyal BUY ===
-        macd_cross = prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']
-        harga_diatas_ma = last['Close'] > last['MA5'] and last['Close'] > last['MA20']
-        rsi_oversold = last['RSI'] < 30
-
-        if macd_cross or harga_diatas_ma or rsi_oversold:
-            sinyal = f"{kode} → ✅ BUY\nClose: {last['Close']:.2f} | MA5: {last['MA5']:.2f} | MA20: {last['MA20']:.2f}\nRSI: {last['RSI']:.2f} | MACD: {last['MACD']:.2f} | Signal: {last['Signal']:.2f}"
-            hasil_sinyal.append(sinyal)
-
-    except Exception as e:
-        print(f"Error {kode}: {e}")
+    if df.empty or len(df) < 30:
         continue
+
+    df['MA5'] = SMAIndicator(df['Close'], window=5).sma_indicator()
+    df['MA20'] = SMAIndicator(df['Close'], window=20).sma_indicator()
+    df['RSI'] = RSIIndicator(df['Close']).rsi()
+    macd = MACD(df['Close'])
+    df['MACD'] = macd.macd()
+    df['Signal'] = macd.macd_signal()
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    if pd.isnull(last[['MA5', 'MA20', 'RSI', 'MACD', 'Signal']]).any():
+        continue
+
+    macd_buy = prev['MACD'] < prev['Signal'] and last['MACD'] > last['Signal']
+    harga_above_ma = last['Close'] > last['MA5'] and last['Close'] > last['MA20']
+    rsi_oversold = last['RSI'] < 30
+
+    if macd_buy or harga_above_ma or rsi_oversold:
+        hasil_sinyal.append(f"{kode} → ✅ BUY ({mode})")
 
 # === Kirim ke Telegram ===
 if hasil_sinyal:
-    message = "📊 *Sinyal Otomatis IHSG (MACD/RSI/MA)*\n\n" + "\n\n".join(hasil_sinyal[:20])  # Batasi maksimal 20 saham
+    pesan = f"📊 *Sinyal {mode} IHSG ({now.strftime('%H:%M')} WIB)*\n\n" + "\n".join(hasil_sinyal)
 else:
-    message = "🔍 Tidak ada sinyal kuat di Saham IHSG hari ini."
+    pesan = f"🔍 Tidak ada sinyal kuat ({mode}) di saham IHSG hari ini."
 
 requests.post(
     f'https://api.telegram.org/bot{TOKEN}/sendMessage',
-    data={'chat_id': CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
+    data={'chat_id': CHAT_ID, 'text': pesan, 'parse_mode': 'Markdown'}
 )
