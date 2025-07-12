@@ -1,27 +1,26 @@
-name: Auto Run Bot Saham
+name: Auto Run Bot Saham Gabungan
 
 on:
   schedule:
-    - cron: '30 2 * * *'  # 09:30 WIB (02:30 UTC)
-    - cron: '0 7 * * *'   # 14:00 WIB (07:00 UTC)
+    - cron: '30 2 * * *'  # 09:30 WIB
+    - cron: '0 7 * * *'   # 14:00 WIB
+    - cron: '30 10 * * *' # 17:30 WIB
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
-          pip install yfinance ta pandas requests lxml
+          pip install yfinance ta requests pandas lxml
 
-      - name: Run bot script
-        run: |
-          python bot_saham.py
+      - name: Run bot gabungan
+        run: python bot_saham.py
